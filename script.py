@@ -1,36 +1,30 @@
-from flask import Flask, request, jsonify
-from werkzeug.utils import secure_filename
-from ZSIC import ZeroShotImageClassification
-import os
+from flask import Flask, render_template_string
 import requests
-from PIL import Image
-from io import BytesIO
+from bs4 import BeautifulSoup
+import urllib3
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+from flask import jsonify
 
 app = Flask(__name__)
 
-@app.route('/', methods=['GET'])
+@app.route('/')
 def home():
-    return "Welcome to my application!", 200
+    response = requests.get('https://earthquake.phivolcs.dost.gov.ph', verify=False)
+    soup = BeautifulSoup(response.text, 'html.parser')
+    
+    classes = ['auto-style99', 'auto-style90', 'auto-style77', 'auto-style56', 'auto-style52']
+    earthquake = {}
 
-@app.route('/predict', methods=['POST'])
-def predict():
-    try:
-        zsic = ZeroShotImageClassification()
-        image_url = request.form.get('image_url')
-        if not image_url:
-            return jsonify({'error': 'No image URL provided'}), 400
-        response = requests.get(image_url)
-        image = Image.open(BytesIO(response.content))
-        candidate_labels = request.form.get('candidate_labels', '').split(',')
-        preds = zsic(image=image, candidate_labels=candidate_labels)
-        # Ensure the preds dictionary is JSON-serializable
-        preds = {k: str(v) for k, v in preds.items()}
-        response = jsonify(preds)
-        print(response.get_data(as_text=True))
-        return response
-    except Exception as e:
-        app.logger.error(f"Exception occurred: {type(e).__name__}, {str(e)}")
-        return "Doesn't work", 500
+    for class_name in classes:
+        elements = soup.select('.' + class_name)
+        for i, element in enumerate(elements):
+            text = element.text.replace('\n', '').replace('\t', '').replace('\u00c2', '').replace('\u00b0', '')
+            if i not in earthquake:
+                earthquake[i] = text
+            else:
+                earthquake[i] += text
+
+    return jsonify(earthquake)
 
 if __name__ == '__main__':
     app.run(debug=True)
